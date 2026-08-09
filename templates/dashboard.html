@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
+<style>
+  .page-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+  .page-header img { height: 46px; width: auto; object-fit: contain; }
+  .page-header h1 { font-size: 22px; margin: 0; }
+
+  .overview { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  .overview .card { min-width: 120px; padding: 14px 20px; }
+  .overview .num { font-size: 24px; font-weight: 600; }
+  .overview .label { color: var(--muted); font-size: 12px; }
+
+  .trend-card { margin-bottom: 24px; }
+  .trend-card .chart-wrap { height: 160px; }
+  .trend-title { font-size: 13px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .filters { display: flex; gap: 16px; margin-bottom: 24px; align-items: flex-end; flex-wrap: wrap; }
+  .filters .field { display: flex; flex-direction: column; }
+  .filters label { margin-bottom: 4px; }
+  .filters select {
+    background: #0f1420; color: var(--text); border: 1px solid var(--panel-border);
+    border-radius: 8px; padding: 8px 10px; font-size: 14px; min-width: 140px;
+  }
+
+  .focus-banner {
+    background: linear-gradient(135deg, rgba(77,163,255,0.12), rgba(245,196,81,0.08));
+    border: 1px solid rgba(77,163,255,0.3); border-radius: 12px;
+    padding: 16px 20px; margin-bottom: 24px; font-size: 14px;
+  }
+  .focus-banner .focus-title { font-weight: 600; margin-bottom: 4px; }
+  .focus-banner .focus-body { color: var(--muted); }
+
+  .matchup { margin-bottom: 20px; }
+  .matchup-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; flex-wrap: wrap; gap: 6px; }
+  .matchup-title { font-size: 17px; font-weight: 600; display: flex; align-items: center; }
+  .matchup-title img.race-icon { height: 1.15em; width: 1.15em; margin: 0 6px 0 2px; }
+  .matchup-title img.race-icon:first-child { margin-left: 0; }
+  .matchup-record { color: var(--muted); font-size: 13px; }
+  .chart-wrap { height: 220px; margin-bottom: 8px; }
+  .legend-note { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+
+  .sub-stats { display: flex; gap: 24px; margin: 12px 0 18px; flex-wrap: wrap; }
+  .sub-stat { font-size: 13px; color: var(--muted); }
+  .sub-stat b { color: var(--text); }
+
+  .map-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+  .map-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--panel-border); }
+  .map-table td { padding: 4px 8px; border-bottom: 1px solid #1d2438; }
+  .winrate-bar-bg { background: #1d2438; border-radius: 4px; height: 6px; width: 100px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; }
+  .winrate-bar-fill { background: var(--win); height: 6px; }
+
+  .flags-title, .section-title { font-size: 13px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 20px; }
+  .flag-card {
+    background: #1d2438; border-left: 3px solid var(--loss); border-radius: 6px;
+    padding: 10px 14px; margin-bottom: 8px; font-size: 13px;
+  }
+  .flag-card .flag-file { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .flag-card ul { margin: 4px 0 0 18px; padding: 0; }
+  .no-flags { color: var(--muted); font-size: 13px; font-style: italic; }
+  .badge {
+    display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    margin-left: 8px; background: rgba(245, 196, 81, 0.15); color: var(--pro);
+    border: 1px solid rgba(245, 196, 81, 0.4);
+  }
+  .empty-state { color: var(--muted); text-align: center; padding: 60px 0; }
+  .no-match-state { color: var(--muted); text-align: center; padding: 30px 0; font-size: 13px; }
+
+  .build-guide { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+  .build-step {
+    background: #1d2438; border-radius: 6px; padding: 6px 10px;
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .build-step .t { color: var(--pro); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .build-step .n { color: var(--text); }
+
+  .diff-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .diff-list li {
+    padding: 8px 12px; margin-bottom: 6px; border-radius: 6px;
+    background: #1d2438; border-left: 3px solid var(--accent);
+  }
+  .diff-list li.missing { border-left-color: var(--pro); }
+</style>
+
+<div class="page-header">
+  <img src="{{ url_for('static', filename='img/starcraft2_logo.png') }}" alt="StarCraft II">
+  <h1>{% if display_name %}{{ display_name }}'s Dashboard{% else %}Your Dashboard{% endif %}</h1>
+</div>
+
+<div id="overview" class="overview"></div>
+<div id="trend-card" class="card trend-card" style="display:none;">
+  <div class="trend-title">Win rate over time</div>
+  <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+</div>
+<div id="focus-banner"></div>
+
+<div class="filters">
+  <div class="field">
+    <label>My race</label>
+    <select id="filter-my-race"><option value="">All</option></select>
+  </div>
+  <div class="field">
+    <label>Opponent race</label>
+    <select id="filter-opp-race"><option value="">All</option></select>
+  </div>
+</div>
+
+<div id="matchups"></div>
+<div id="no-match" class="no-match-state" style="display:none;">No matchups match that filter combination yet.</div>
+<div id="empty" class="empty-state" style="display:none;">
+  No games yet &mdash; head to <a class="link" href="{{ url_for('upload') }}">Upload my replays</a> to get started.
+</div>
+
+<script>
+const RACE_ICON_URLS = {{ race_icon_urls | tojson }};
+let ALL_MATCHUPS = [];
+
+function fmtTime(v) {
+  if (v === null || v === undefined) return 'n/a';
+  const total = Math.round(v);
+  const mm = Math.floor(total / 60);
+  const ss = (total % 60).toString().padStart(2, '0');
+  return `${mm}:${ss}`;
+}
+
+function raceIcon(race) {
+  const url = RACE_ICON_URLS[race];
+  return url ? `<img class="race-icon" src="${url}" alt="${race}">` : '';
+}
+
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function stepLabel(step) {
+  return step.occurrence > 1 ? `${step.label} (${ordinal(step.occurrence)})` : step.label;
+}
+
+function renderMatchups(matchups) {
+  const container = document.getElementById('matchups');
+  container.innerHTML = '';
+  document.getElementById('no-match').style.display = matchups.length === 0 ? 'block' : 'none';
+
+  matchups.forEach((m, idx) => {
+    const section = document.createElement('div');
+    section.className = 'card matchup';
+    const hasPro = m.has_pro;
+
+    let mapRows = '';
+    m.map_stats.forEach(ms => {
+      const wr = ms.total ? Math.round(100 * ms.wins / ms.total) : 0;
+      mapRows += `<tr>
+        <td>${ms.map}</td>
+        <td>${ms.wins}W / ${ms.losses}L</td>
+        <td><span class="winrate-bar-bg"><span class="winrate-bar-fill" style="width:${wr}%"></span></span>${wr}%</td>
+      </tr>`;
+    });
+
+    const blockWin = m.avg_supply_blocks_win;
+    const blockLoss = m.avg_supply_blocks_loss;
+
+    let guideHtml = '';
+    if (m.pro_build_guide.length > 0) {
+      const steps = m.pro_build_guide.map(s =>
+        `<div class="build-step"><span class="t">${fmtTime(s.time)}</span><span class="n">${stepLabel(s)}</span></div>`
+      ).join('');
+      guideHtml = `
+        <div class="section-title">Recommended build (from pro pool, ${m.pro_count} games)</div>
+        <div class="build-guide">${steps}</div>`;
+    }
+
+    let diffHtml = '';
+    if (m.build_differences.length > 0) {
+      const items = m.build_differences.map(d => {
+        if (d.type === 'missing') {
+          const proPct = Math.round(d.pro_frequency * 100);
+          const userPct = Math.round(d.user_frequency * 100);
+          return `<li class="missing">Pros build a <b>${stepLabel(d)}</b> around ${fmtTime(d.pro_time)} in ${proPct}% of games &mdash; you do in ${userPct}% of yours.</li>`;
+        }
+        const direction = d.diff > 0 ? 'later' : 'earlier';
+        return `<li>Your <b>${stepLabel(d)}</b> lands ${Math.abs(d.diff)}s ${direction} than pros' median (${fmtTime(d.user_time)} vs ${fmtTime(d.pro_time)}).</li>`;
+      }).join('');
+      diffHtml = `
+        <div class="section-title">What pros do that you don't</div>
+        <ul class="diff-list">${items}</ul>`;
+    }
+
+    section.innerHTML = `
+      <div class="matchup-header">
+        <div class="matchup-title">${raceIcon(m.my_race)}${m.my_race} vs ${raceIcon(m.opp_race)}${m.opp_race}${hasPro ? '<span class="badge">pro data</span>' : ''}</div>
+        <div class="matchup-record">${m.game_count} games &middot; ${m.win_count}W / ${m.loss_count}L</div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-${idx}"></canvas></div>
+      <div class="legend-note">Bars show median time reached. Shorter bar = earlier.</div>
+      ${(blockWin !== null || blockLoss !== null) ? `
+      <div class="sub-stats">
+        <div class="sub-stat">Avg. supply blocks (first 12 min) in wins: <b>${blockWin ?? 'n/a'}</b></div>
+        <div class="sub-stat">...in losses: <b>${blockLoss ?? 'n/a'}</b></div>
+      </div>` : ''}
+      ${m.map_stats.length > 0 ? `
+      <table class="map-table">
+        <tr><th>Map</th><th>Record</th><th>Win rate</th></tr>
+        ${mapRows}
+      </table>` : ''}
+      <div class="flags"></div>
+      ${guideHtml}
+      ${diffHtml}
+    `;
+    container.appendChild(section);
+
+    const labels = Object.values(m.stats).map(s => s.label);
+    const winData = Object.values(m.stats).map(s => s.win);
+    const lossData = Object.values(m.stats).map(s => s.loss);
+    const proData = Object.values(m.stats).map(s => s.pro);
+
+    const datasets = [
+      { label: 'Your wins', data: winData, backgroundColor: '#3ecf8e' },
+      { label: 'Your losses', data: lossData, backgroundColor: '#ff6b6b' },
+    ];
+    if (hasPro) datasets.push({ label: 'Pro pool', data: proData, backgroundColor: '#f5c451' });
+
+    try {
+      new Chart(document.getElementById(`chart-${idx}`), {
+        type: 'bar',
+        data: { labels, datasets },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              ticks: { color: '#93a0c2', callback: (val) => fmtTime(val) },
+              grid: { color: '#2a3350' }
+            },
+            y: { ticks: { color: '#e7ebf5' }, grid: { display: false } }
+          },
+          plugins: {
+            legend: { labels: { color: '#e7ebf5' } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${fmtTime(ctx.raw)}`
+              }
+            }
+          }
+        }
+      });
+    } catch (e) {
+      console.error('Matchup chart failed to render:', e);
+    }
+
+    const flagsDiv = section.querySelector('.flags');
+    if (m.flagged.length === 0) {
+      flagsDiv.innerHTML = '<div class="no-flags">No losses deviated meaningfully from your normal wins.</div>';
+    } else {
+      let html = '<div class="flags-title">Losses worth a second look</div>';
+      m.flagged.forEach(f => {
+        html += `<div class="flag-card"><div class="flag-file">${f.file} &middot; ${f.map}</div><ul>`;
+        f.notes.forEach(n => {
+          html += `<li>${n.label} was ${n.diff}${typeof n.diff === 'number' && n.label !== 'Supply blocks' ? 's' : ''} ${n.direction} than your usual win (${n.val} vs ${n.win_med})</li>`;
+        });
+        html += '</ul></div>';
+      });
+      flagsDiv.innerHTML = html;
+    }
+  });
+}
+
+function applyFilters() {
+  const myRace = document.getElementById('filter-my-race').value;
+  const oppRace = document.getElementById('filter-opp-race').value;
+  const filtered = ALL_MATCHUPS.filter(m =>
+    (!myRace || m.my_race === myRace) && (!oppRace || m.opp_race === oppRace)
+  );
+  renderMatchups(filtered);
+}
+
+function renderTrend(trend) {
+  if (trend.length < 5) return;
+
+  let wins = 0;
+  const labels = [];
+  const data = [];
+  trend.forEach((g, i) => {
+    if (g.win) wins++;
+    labels.push(g.played_at.slice(0, 10));
+    data.push(Math.round(100 * wins / (i + 1)));
+  });
+
+  document.getElementById('trend-card').style.display = 'block';
+  new Chart(document.getElementById('trend-chart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Cumulative win rate',
+        data,
+        borderColor: '#4da3ff',
+        backgroundColor: 'rgba(77,163,255,0.15)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 0,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: '#93a0c2', maxTicksLimit: 8 }, grid: { display: false } },
+        y: { ticks: { color: '#93a0c2', callback: (v) => v + '%' }, grid: { color: '#2a3350' }, min: 0, max: 100 },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => `Win rate so far: ${ctx.raw}%` } },
+      },
+    },
+  });
+}
+
+fetch("{{ url_for('api_matchups') }}")
+  .then(r => r.json())
+  .then(data => {
+    const matchups = data.matchups;
+    ALL_MATCHUPS = matchups;
+
+    if (matchups.length === 0) {
+      document.getElementById('empty').style.display = 'block';
+      return;
+    }
+
+    const totalGames = matchups.reduce((s, m) => s + m.game_count, 0);
+    const totalWins = matchups.reduce((s, m) => s + m.win_count, 0);
+    const totalLosses = matchups.reduce((s, m) => s + m.loss_count, 0);
+    const winrate = totalGames ? Math.round(100 * totalWins / totalGames) : 0;
+
+    document.getElementById('overview').innerHTML = `
+      <div class="card"><div class="num">${totalGames}</div><div class="label">Games analyzed</div></div>
+      <div class="card"><div class="num">${totalWins}</div><div class="label">Wins</div></div>
+      <div class="card"><div class="num">${totalLosses}</div><div class="label">Losses</div></div>
+      <div class="card"><div class="num">${winrate}%</div><div class="label">Win rate</div></div>
+    `;
+
+    if (data.excluded_pre_patch_count > 0) {
+      document.getElementById('overview').innerHTML += `
+        <div class="card" style="display:flex; align-items:center; min-width:auto;">
+          <div class="label">${data.excluded_pre_patch_count} pre-${data.patch_cutoff_date} game${data.excluded_pre_patch_count === 1 ? '' : 's'} excluded &mdash; see <a class="link" href="{{ url_for('games') }}">Game log</a></div>
+        </div>`;
+    }
+
+    try {
+      renderTrend(data.trend || []);
+    } catch (e) {
+      console.error('Trend chart failed to render:', e);
+    }
+
+    // Focus suggestion: weakest matchup with a meaningful sample size.
+    const eligible = matchups.filter(m => m.game_count >= 3);
+    if (eligible.length > 0) {
+      const weakest = eligible.reduce((worst, m) => {
+        const wr = m.win_count / m.game_count;
+        const worstWr = worst.win_count / worst.game_count;
+        return wr < worstWr ? m : worst;
+      });
+      const wr = Math.round(100 * weakest.win_count / weakest.game_count);
+      document.getElementById('focus-banner').innerHTML = `
+        <div class="focus-banner">
+          <div class="focus-title">Suggested focus: ${weakest.my_race} vs ${weakest.opp_race}</div>
+          <div class="focus-body">${weakest.win_count}W / ${weakest.loss_count}L (${wr}% win rate) &mdash;
+          your weakest matchup with enough games to be meaningful. Filter to it below and check the
+          flagged losses for what's different about your worse games there.</div>
+        </div>
+      `;
+    }
+
+    // Populate filter dropdowns from whatever races actually appear.
+    const myRaces = [...new Set(matchups.map(m => m.my_race))].sort();
+    const oppRaces = [...new Set(matchups.map(m => m.opp_race))].sort();
+    const myRaceSelect = document.getElementById('filter-my-race');
+    const oppRaceSelect = document.getElementById('filter-opp-race');
+    myRaces.forEach(r => myRaceSelect.innerHTML += `<option value="${r}">${r}</option>`);
+    oppRaces.forEach(r => oppRaceSelect.innerHTML += `<option value="${r}">${r}</option>`);
+    myRaceSelect.addEventListener('change', applyFilters);
+    oppRaceSelect.addEventListener('change', applyFilters);
+
+    renderMatchups(matchups);
+  })
+  .catch(e => console.error('Dashboard failed to load:', e));
+</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Upload replays{% endblock %}
+{% block content %}
+<div class="card" style="max-width:560px;">
+  <h2>Add your replays</h2>
+  {% if my_names %}
+  {% if message %}<div class="message">{{ message }}</div>{% endif %}
+
+  <p style="color:var(--muted); font-size:13px;">
+    Point this at your replay folder and it'll scan every <code>.SC2Replay</code>
+    file there directly &mdash; no need to pick files by hand. We'll find you
+    using your saved name(s) (<code>{{ my_names | join(', ') }}</code>).
+  </p>
+  <form method="post" action="{{ url_for('scan_folder') }}">
+    <label>Replay folder path</label>
+    <input type="text" name="folder_path" value="{{ default_folder or '' }}"
+           placeholder="C:\Users\you\Documents\StarCraft II\Accounts\...\Replays\Multiplayer">
+    <input type="submit" value="Scan folder">
+  </form>
+
+  <hr style="border-color: var(--panel-border); margin: 24px 0;">
+
+  <p style="color:var(--muted); font-size:13px;">
+    Or upload individual files instead:
+  </p>
+  <form method="post" enctype="multipart/form-data">
+    <input type="file" name="replays" multiple accept=".SC2Replay">
+    <br><br>
+    <input type="submit" value="Upload and analyze">
+  </form>
+  {% else %}
+  <p style="color:var(--muted); font-size:13px;">
+    Set your in-game name(s) in <a class="link" href="{{ url_for('settings') }}">Settings</a>
+    first so the app can find you inside your replays.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Game log{% endblock %}
+{% block content %}
+<style>
+  h2 { margin-top: 0; }
+  .filters { display: flex; gap: 16px; margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap; }
+  .filters .field { display: flex; flex-direction: column; }
+  .filters label { margin-bottom: 4px; }
+  .filters select {
+    background: #0f1420; color: var(--text); border: 1px solid var(--panel-border);
+    border-radius: 8px; padding: 8px 10px; font-size: 14px; min-width: 140px;
+  }
+  table.games-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .games-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 8px; border-bottom: 1px solid var(--panel-border); }
+  .games-table td { padding: 8px; border-bottom: 1px solid #1d2438; }
+  .games-table tr:last-child td { border-bottom: none; }
+  .result-win { color: var(--win); font-weight: 600; }
+  .result-loss { color: var(--loss); font-weight: 600; }
+  .empty-state { color: var(--muted); text-align: center; padding: 60px 0; }
+  tr.pre-patch { opacity: 0.5; }
+  .pre-patch-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    margin-left: 8px; background: rgba(147,160,194,0.15); color: var(--muted);
+    border: 1px solid rgba(147,160,194,0.3);
+  }
+</style>
+
+<h2>Game log</h2>
+<p style="color:var(--muted); font-size:13px; margin-top:-12px;">
+  Games before {{ patch_cutoff_date }} are dimmed and excluded from the
+  Dashboard's stats (different starting economy - see
+  <a class="link" href="{{ url_for('settings') }}">Settings</a> to change the cutoff).
+</p>
+
+<form class="filters" method="get">
+  <div class="field">
+    <label>My race</label>
+    <select name="my_race" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for r in my_races %}
+      <option value="{{ r }}" {% if r == selected_my_race %}selected{% endif %}>{{ r }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>Opponent race</label>
+    <select name="opp_race" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for r in opp_races %}
+      <option value="{{ r }}" {% if r == selected_opp_race %}selected{% endif %}>{{ r }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+{% if games %}
+<div class="card">
+  <table class="games-table">
+    <tr>
+      <th>Date</th>
+      <th>Map</th>
+      <th>Matchup</th>
+      <th>Result</th>
+      <th>1st supply</th>
+      <th>1st gas</th>
+      <th>2nd base</th>
+      <th>3rd base</th>
+      <th>Supply blocks</th>
+    </tr>
+    {% for g in games %}
+    <tr class="{{ 'pre-patch' if g.pre_patch else '' }}">
+      <td>{{ g.played_at[:10] if g.played_at else 'n/a' }}{% if g.pre_patch %}<span class="pre-patch-badge">pre-patch</span>{% endif %}</td>
+      <td>{{ g.map or 'Unknown' }}</td>
+      <td>
+        {% if race_icons.get(g.my_race) %}<img class="race-icon" src="{{ url_for('static', filename='img/' ~ race_icons[g.my_race]) }}" alt="{{ g.my_race }}">{% endif %}{{ g.my_race }}
+        vs
+        {% if race_icons.get(g.opp_race) %}<img class="race-icon" src="{{ url_for('static', filename='img/' ~ race_icons[g.opp_race]) }}" alt="{{ g.opp_race }}">{% endif %}{{ g.opp_race }}
+      </td>
+      <td class="{{ 'result-win' if g.win else 'result-loss' }}">{{ 'Win' if g.win else 'Loss' }}</td>
+      <td>{{ fmt_time(g.first_supply_time) }}</td>
+      <td>{{ fmt_time(g.first_gas_time) }}</td>
+      <td>{{ fmt_time(g.second_base_time) }}</td>
+      <td>{{ fmt_time(g.third_base_time) }}</td>
+      <td>{{ g.supply_block_count if g.supply_block_count is not none else 'n/a' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  No games match that filter yet &mdash; head to <a class="link" href="{{ url_for('upload') }}">Upload my replays</a>.
+</div>
+{% endif %}
+{% endblock %}

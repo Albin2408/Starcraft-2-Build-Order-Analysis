@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Upload pro pool{% endblock %}
+{% block content %}
+<div class="card" style="max-width:600px;">
+  <h2>Add to the pro/benchmark pool</h2>
+  <p style="color:var(--muted); font-size:13px;">
+    Used as the comparison benchmark on your dashboard. Good source: download
+    recent replays (or a whole tournament "replay pack" zip, then unzip)
+    filtered by matchup + "Pro only" from
+    <a class="link" href="https://lotv.spawningtool.com/replays/?pro_only=on" target="_blank">lotv.spawningtool.com</a>
+    &mdash; ideally from recent dates so it reflects the current patch. Both
+    players' build orders are extracted from each replay, so it works
+    regardless of which side is "the pro."
+  </p>
+  {% if message %}<div class="message">{{ message }}</div>{% endif %}
+
+  <form method="post" action="{{ url_for('scan_folder_pro') }}">
+    <label>Pro replay folder path</label>
+    <input type="text" name="folder_path" value="{{ default_folder or '' }}"
+           placeholder="C:\Users\you\Downloads\pro_replays">
+    <input type="submit" value="Scan folder">
+  </form>
+
+  <hr style="border-color: var(--panel-border); margin: 24px 0;">
+
+  <p style="color:var(--muted); font-size:13px;">Or upload individual files instead:</p>
+  <form method="post" enctype="multipart/form-data">
+    <input type="file" name="replays" multiple accept=".SC2Replay">
+    <br><br>
+    <input type="submit" value="Upload to pro pool">
+  </form>
+</div>
+{% endblock %}

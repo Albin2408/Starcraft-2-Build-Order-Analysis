@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="card" style="max-width:480px;">
+  <h2>Settings</h2>
+  <p style="color:var(--muted); font-size:13px;">
+    Your SC2 in-game name(s)/battletag(s), comma-separated if you've played
+    under more than one. This is how the app finds you inside your own
+    uploaded replay files.
+  </p>
+  {% if message %}<div class="message">{{ message }}</div>{% endif %}
+  <form method="post">
+    <label>Your in-game name(s)</label>
+    <input type="text" name="sc2_names" value="{{ sc2_names }}" placeholder="e.g. Tassadar, Tassadar#1234">
+
+    <label>Patch cutoff date</label>
+    <p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+      Games and pro-pool replays played before this date are excluded from
+      the dashboard's stats and build guides (economy-changing patches make
+      cross-patch timing comparisons misleading). They still show up in the
+      <a class="link" href="{{ url_for('games') }}">Game log</a>, just marked
+      as pre-patch. Leave blank to include everything.
+    </p>
+    <input type="text" name="patch_cutoff_date" value="{{ patch_cutoff_date }}" placeholder="YYYY-MM-DD">
+
+    <input type="submit" value="Save">
+  </form>
+</div>
+{% endblock %}
