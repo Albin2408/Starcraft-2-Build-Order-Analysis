@@ -1,27 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<div class="card" style="max-width:480px;">
-  <h2>Settings</h2>
-  <p style="color:var(--muted); font-size:13px;">
-    Your SC2 in-game name(s)/battletag(s), comma-separated if you've played
-    under more than one. This is how the app finds you inside your own
-    uploaded replay files.
-  </p>
+<div class="card" style="max-width:520px;">
+  <h2 style="margin-top:0">Settings</h2>
   {% if message %}<div class="message">{{ message }}</div>{% endif %}
   <form method="post">
     <label>Your in-game name(s)</label>
-    <input type="text" name="sc2_names" value="{{ sc2_names }}" placeholder="e.g. Tassadar, Tassadar#1234">
-
-    <label>Patch cutoff date</label>
-    <p style="color:var(--muted); font-size:13px; margin-top:-8px;">
-      Games and pro-pool replays played before this date are excluded from
-      the dashboard's stats and build guides (economy-changing patches make
-      cross-patch timing comparisons misleading). They still show up in the
-      <a class="link" href="{{ url_for('games') }}">Game log</a>, just marked
-      as pre-patch. Leave blank to include everything.
+    <p class="muted" style="font-size:13px; margin:2px 0 0;">
+      Comma-separated if you've played under more than one. This is how the app finds you inside your own replays;
+      a battletag like <code>Name#1234</code> works too.
     </p>
-    <input type="text" name="patch_cutoff_date" value="{{ patch_cutoff_date }}" placeholder="YYYY-MM-DD">
+    <input type="text" name="sc2_names" value="{{ sc2_names }}" placeholder="e.g. YourName, YourName#1234">
+
+    <label>Patch cutoff</label>
+    <p class="muted" style="font-size:13px; margin:2px 0 0;">
+      Games and pro replays from before this are left out of the dashboard's stats and build guides &mdash; an
+      economy-changing patch makes older timings misleading. Use a date (<code>2026-06-22</code>) or a game version
+      (<code>5.0.16</code>). They still appear in the Game log, marked pre-patch. Blank includes everything.
+    </p>
+    <input type="text" name="patch_cutoff_date" value="{{ patch_cutoff_date }}" placeholder="YYYY-MM-DD or 5.0.16">
 
     <input type="submit" value="Save">
   </form>

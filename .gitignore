@@ -1,7 +1,26 @@
-venv/
+# Personal data -- never commit your own replay stats or files
+sc2.db
+sc2.db-wal
+sc2.db-shm
+*.db-journal
+uploads/*
+pro_uploads/*
+!uploads/.gitkeep
+!pro_uploads/.gitkeep
+*.SC2Replay
+
+# Python
 __pycache__/
 *.pyc
-.claude/
-uploads/
-pro_uploads/
-sc2.db
+.venv/
+venv/
+
+# Env/secrets (REDIS_URL, SC2_REPLAY_DIR, tokens, ...)
+.env
+*.env
+.env.*
+
+# Editor / OS cruft
+.DS_Store
+.vscode/
+.idea/

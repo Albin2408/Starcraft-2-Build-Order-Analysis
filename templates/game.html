@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Game replay analysis{% endblock %}
+{% block content %}
+<script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/heatmap.js') }}"></script>
+<style>
+  .crumbs { font-size: 13px; margin-bottom: 14px; }
+  .g-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
+  .g-head h2 { margin: 0; font-size: 21px; display: flex; align-items: center; }
+  .g-head h2 img.race-icon { height: 1.1em; width: 1.1em; margin: 0 6px 0 2px; }
+  .res { font-weight: 600; padding: 2px 10px; border-radius: 999px; font-size: 13px; }
+  .res.win { color: var(--win); background: rgba(62,207,142,.12); } .res.loss { color: var(--loss); background: rgba(255,107,107,.12); }
+  .g-sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .tile { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px; padding: 12px 14px; }
+  .tile .v { font-size: 22px; font-weight: 600; } .tile .k { font-size: 12px; color: var(--muted); }
+  .tile .h { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .stage { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+  .stage canvas { border-radius: 8px; max-width: 100%; height: auto; }
+  .side { flex: 1; min-width: 250px; display: flex; flex-direction: column; gap: 14px; }
+  .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .seg { display: flex; flex-wrap: wrap; gap: 5px; }
+  .seg button { background: var(--panel-2); color: var(--muted); border: 1px solid var(--panel-border); border-radius: 6px; padding: 5px 10px; font-size: 12px; }
+  .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  input[type=range] { width: 100%; }
+  .clock { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+  .chart-card { margin-top: 18px; }
+  .chart-card h4 { margin: 0 0 8px; font-size: 13px; font-weight: 500; }
+  .chart-box { height: 170px; position: relative; }
+  .fights { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .fights th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--panel-border); }
+  .fights td { padding: 5px 8px; border-bottom: 1px solid var(--panel-2); }
+  .fights tr.fight-row { cursor: pointer; } .fights tr.fight-row:hover td { background: var(--panel-2); }
+  .err { color: var(--loss); padding: 40px 0; text-align: center; }
+</style>
+
+<div class="crumbs"><a class="link" href="{{ url_for('games') }}">&larr; Game log</a></div>
+<div id="root"><div class="muted" style="padding:40px 0">Loading…</div></div>
+
+<script>
+const SOURCE = {{ source | tojson }};
+const GAME_ID = {{ game_id | tojson }};
+const RACE_ICON_URLS = {{ race_icon_urls | tojson }};
+const fmt = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const pct = (v) => v === null || v === undefined ? 'n/a' : Math.round(v * 100) + '%';
+const n0 = (v) => v === null || v === undefined ? 'n/a' : Math.round(v);
+const icon = (r) => RACE_ICON_URLS[r] ? `<img class="race-icon" src="${RACE_ICON_URLS[r]}" alt="${r}">` : '';
+
+fetch(`/api/game/${SOURCE}/${GAME_ID}`).then((r) => { if (!r.ok) throw new Error('not found'); return r.json(); }).then(({ game, telemetry: tel }) => {
+  const root = document.getElementById('root');
+  if (!tel) { root.innerHTML = '<div class="err">No telemetry stored for this game yet — rebuild it from the dashboard.</div>'; return; }
+  const who = SOURCE === 'pro' ? 'player' : 'you';
+  const K = tel.me.length;
+
+  root.innerHTML = `
+    <div class="g-head"><h2>${icon(game.my_race)}${game.my_race} vs ${icon(game.opp_race)}${game.opp_race}</h2>
+      <span class="res ${game.win ? 'win' : 'loss'}">${game.win ? 'Win' : 'Loss'}</span></div>
+    <div class="g-sub">${game.map || 'Unknown map'} &middot; ${fmt(game.game_length)} &middot; ${(game.played_at || '').slice(0, 10)} &middot; patch ${game.game_version || '?'} &middot; <span class="muted">${game.file_name}</span></div>
+
+    <div class="tiles">
+      <div class="tile"><div class="v">${n0(game.apm_total)}</div><div class="k">APM overall</div></div>
+      <div class="tile"><div class="v">${n0(game.apm_combat)} <span class="muted" style="font-size:13px">vs ${n0(game.apm_macro)}</span></div><div class="k">APM fights vs calm</div><div class="h">retention ${pct(game.apm_retention)}</div></div>
+      <div class="tile"><div class="v">${pct(game.macro_retention)}</div><div class="k">Macro retention</div><div class="h">${game.macro_rate_combat ?? 'n/a'} vs ${game.macro_rate_calm ?? 'n/a'} cmds/min</div></div>
+      <div class="tile"><div class="v">${n0(game.float_penalty)}</div><div class="k">Avg. minerals over 400</div><div class="h">${game.float_pct ?? 'n/a'}% of time over 800</div></div>
+      <div class="tile"><div class="v">${game.fight_count}</div><div class="k">Fights</div></div>
+    </div>
+
+    <div class="card">
+      <div class="stage">
+        <canvas id="map" width="520" height="520"></canvas>
+        <div class="side">
+          <div><div class="lbl">Game clock</div><div class="clock" id="clock">0:00</div></div>
+          <div><input type="range" id="scrub" min="0" max="${K - 1}" value="0"></div>
+          <div class="seg"><button id="play">&#9654; Play</button>
+            <button class="spd on" data-s="1">1×</button><button class="spd" data-s="2">2×</button><button class="spd" data-s="4">4×</button></div>
+          <div><div class="lbl">Show</div><div class="seg" id="layers">
+            <button data-v="both" class="on">Both armies</button><button data-v="me">${who === 'you' ? 'Mine' : 'Player'}</button><button data-v="opp">Opponent</button></div></div>
+          <label style="display:flex;gap:8px;align-items:center;color:var(--text);font-size:13px"><input type="checkbox" id="deaths" checked style="margin:0"> Mark army deaths (last 30s)</label>
+          <div class="legend"><span><i style="background:#5ab4ff"></i>${who === 'you' ? 'your' : "player's"} army</span><span><i style="background:#ff8a3c"></i>opponent</span><span><i style="background:#ff5050"></i>deaths</span></div>
+          <div class="muted" style="font-size:12px">Positions are rebuilt from sparse game data and interpolated (≈10 map units median error), so read this as where armies <i>were</i>, not an exact trace.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card chart-card"><h4>Minerals &amp; gas &mdash; floating above ${tel.float_threshold} shows as a gap over the dashed line</h4><div class="chart-box"><canvas id="c-res"></canvas></div></div>
+    <div class="card chart-card"><h4>Actions per minute (10-second windows) &mdash; shaded bands are fights</h4><div class="chart-box"><canvas id="c-apm"></canvas></div></div>
+    <div class="card chart-card"><h4>Supply &amp; workers</h4><div class="chart-box"><canvas id="c-sup"></canvas></div></div>
+
+    <div class="card chart-card"><h4>Fights (click to jump)</h4>
+      <table class="fights"><tr><th>When</th><th>Army deaths: ${who}</th><th>Opponent</th></tr>
+      ${tel.fights.map((f, i) => `<tr class="fight-row" data-t="${f[0]}"><td>${fmt(f[0])}–${fmt(f[1])}</td><td>${f[2]}</td><td>${f[3]}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No fights detected.</td></tr>'}</table></div>`;
+
+  // ---- map --------------------------------------------------------------------------------
+  const canvas = document.getElementById('map');
+  const scrub = document.getElementById('scrub');
+  const state = { k: 0, layer: 'both', deaths: true, speed: 1, timer: null };
+  const TRAIL = 3;                                                // snapshots averaged per frame
+
+  const toCells = (frames) => {
+    const acc = new Map();
+    for (const flat of frames) for (let i = 0; i < flat.length; i += 2) acc.set(flat[i], (acc.get(flat[i]) || 0) + flat[i + 1] / frames.length);
+    const out = [];
+    acc.forEach((v, cell) => { const p = Heat.rawCellToUnit(cell, tel); out.push({ x: p.x, y: p.y, v }); });
+    return out;
+  };
+  const deathCells = (list, t) => list.filter(([when]) => when <= t && when > t - 30).map(([, cell]) => { const p = Heat.rawCellToUnit(cell, tel); return { x: p.x, y: p.y, v: 1 }; });
+  const frameCells = (key, k) => toCells(tel[key].slice(Math.max(0, k - TRAIL + 1), k + 1));
+
+  // one fixed brightness scale per army so a shrinking army visibly shrinks
+  const peak = (key) => { let m = 0; for (let k = 0; k < K; k += 3) m = Math.max(m, Heat.fieldMax(frameCells(key, k), 3.2)); return Math.max(m, 1e-6); };
+  const SCALE = { me: peak('me'), opp: peak('opp') };
+
+  function draw() {
+    const t = state.k * tel.snap;
+    document.getElementById('clock').textContent = fmt(t);
+    const layers = [];
+    if (state.layer !== 'opp') layers.push({ cells: frameCells('me', state.k), ramp: 'mine', sigma: 3.2, scale: SCALE.me * 0.85 });
+    if (state.layer !== 'me') layers.push({ cells: frameCells('opp', state.k), ramp: 'opp', sigma: 3.2, scale: SCALE.opp * 0.85 });
+    if (state.deaths) {
+      const d = (state.layer !== 'opp' ? deathCells(tel.deaths_me, t) : []).concat(state.layer !== 'me' ? deathCells(tel.deaths_opp, t) : []);
+      layers.push({ cells: d, ramp: 'deaths', sigma: 2.4, scale: 3, gamma: 0.7 });
+    }
+    Heat.render(canvas, layers, { markers: [
+      { pos: Heat.posToUnit(tel.start_me, tel), label: who, color: '#5ab4ff' },
+      { pos: Heat.posToUnit(tel.start_opp, tel), label: 'opp', color: '#ff8a3c' },
+    ] });
+    cursor.t = t;
+    charts.forEach((c) => c.draw());
+  }
+
+  // ---- charts (with fight shading + a cursor synced to the scrubber) ----------------------------------------
+  const cursor = { t: 0 };
+  const overlay = {
+    id: 'overlay',
+    beforeDatasetsDraw(chart) {
+      const { ctx, chartArea: a, scales: { x } } = chart;
+      ctx.save(); ctx.fillStyle = 'rgba(255,107,107,0.12)';
+      tel.fights.forEach((f) => { const x0 = x.getPixelForValue(f[0]), x1 = x.getPixelForValue(f[1]); ctx.fillRect(x0, a.top, Math.max(2, x1 - x0), a.bottom - a.top); });
+      ctx.restore();
+    },
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea: a, scales: { x } } = chart;
+      const px = x.getPixelForValue(cursor.t);
+      ctx.save(); ctx.strokeStyle = '#e7ebf5'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); ctx.restore();
+    },
+  };
+  const S = tel.series;
+  const xy = (xs, ys) => xs.map((x, i) => ({ x, y: ys[i] }));
+  const line = (label, data, color, extra = {}) => ({ label, data, borderColor: color, backgroundColor: color, borderWidth: 1.8, pointRadius: 0, tension: 0.2, ...extra });
+  const baseOpts = (yTitle) => ({
+    responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+    interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+    scales: {
+      x: { type: 'linear', min: 0, max: tel.length, ticks: { color: '#93a0c2', callback: (v) => fmt(v), maxTicksLimit: 12 }, grid: { color: '#222a40' } },
+      y: { beginAtZero: true, ticks: { color: '#93a0c2' }, grid: { color: '#222a40' }, title: { display: !!yTitle, text: yTitle, color: '#93a0c2' } },
+    },
+    plugins: { legend: { labels: { color: '#e7ebf5', boxWidth: 12 } }, tooltip: { callbacks: { title: (items) => fmt(items[0].parsed.x) } } },
+    onClick: (evt, _el, chart) => { const t = chart.scales.x.getValueForPixel(evt.x); setK(Math.round(t / tel.snap)); },
+  });
+  const mk = (id, datasets, yTitle) => new Chart(document.getElementById(id), { type: 'line', data: { datasets }, options: baseOpts(yTitle), plugins: [overlay] });
+  const charts = [];
+  const safe = (fn) => { try { charts.push(fn()); } catch (e) { console.error(e); } };
+  safe(() => mk('c-res', [
+    line('Minerals', xy(S.t, S.minerals), '#4da3ff'), line('Gas', xy(S.t, S.gas), '#3ecf8e'),
+    line(`${tel.float_threshold} threshold`, [{ x: 0, y: tel.float_threshold }, { x: tel.length, y: tel.float_threshold }], '#f5c451', { borderDash: [6, 5], borderWidth: 1.2 }),
+  ]));
+  safe(() => mk('c-apm', [line('APM', xy(S.apm_t, S.apm), '#c792ff', { stepped: true, fill: true, backgroundColor: 'rgba(199,146,255,0.15)' })]));
+  safe(() => mk('c-sup', [
+    line('Supply used', xy(S.t, S.supply), '#4da3ff'), line('Supply cap', xy(S.t, S.cap), '#93a0c2', { borderDash: [5, 4], borderWidth: 1.2 }),
+    line('Workers', xy(S.t, S.workers), '#f5c451'),
+  ]));
+
+  // ---- controls --------------------------------------------------------------------------------------
+  function setK(k) { state.k = Math.min(K - 1, Math.max(0, k)); scrub.value = state.k; draw(); }
+  const stop = () => { if (state.timer) { clearInterval(state.timer); state.timer = null; document.getElementById('play').innerHTML = '&#9654; Play'; } };
+  scrub.addEventListener('input', () => { stop(); setK(+scrub.value); });
+  document.getElementById('play').addEventListener('click', () => {
+    if (state.timer) { stop(); return; }
+    if (state.k >= K - 1) setK(0);
+    document.getElementById('play').innerHTML = '&#10074;&#10074; Pause';
+    state.timer = setInterval(() => { if (state.k >= K - 1) { stop(); return; } setK(state.k + 1); }, 220 / state.speed);
+  });
+  document.querySelectorAll('.spd').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.spd').forEach((x) => x.classList.toggle('on', x === b));
+    state.speed = +b.dataset.s;
+    if (state.timer) { stop(); document.getElementById('play').click(); }
+  }));
+  document.getElementById('layers').addEventListener('click', (e) => {
+    if (e.target.tagName !== 'BUTTON') return;
+    document.querySelectorAll('#layers button').forEach((b) => b.classList.toggle('on', b === e.target));
+    state.layer = e.target.dataset.v; draw();
+  });
+  document.getElementById('deaths').addEventListener('change', (e) => { state.deaths = e.target.checked; draw(); });
+  document.querySelectorAll('.fight-row').forEach((row) => row.addEventListener('click', () => { stop(); setK(Math.round(+row.dataset.t / tel.snap)); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
+
+  // open on the first fight, since that's usually what you came to look at
+  setK(tel.fights.length ? Math.round(tel.fights[0][0] / tel.snap) : 0);
+}).catch((e) => { document.getElementById('root').innerHTML = `<div class="err">Couldn't load that game (${e.message}).</div>`; });
+</script>
+{% endblock %}

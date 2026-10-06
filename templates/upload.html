@@ -1,38 +1,172 @@
 {% extends "base.html" %}
-{% block title %}Upload replays{% endblock %}
+{% set is_pro = (kind == 'pro') %}
+{% block title %}{{ 'Pro pool' if is_pro else 'My replays' }}{% endblock %}
 {% block content %}
-<div class="card" style="max-width:560px;">
-  <h2>Add your replays</h2>
-  {% if my_names %}
-  {% if message %}<div class="message">{{ message }}</div>{% endif %}
+<style>
+  .upload-wrap { max-width: 720px; }
+  .upload-wrap h2 { margin-top: 0; }
+  .dropzone {
+    border: 2px dashed var(--panel-border); border-radius: 14px; padding: 38px 20px;
+    text-align: center; color: var(--muted); cursor: pointer; transition: all .15s;
+    background: rgba(77,163,255,0.03);
+  }
+  .dropzone:hover, .dropzone.over { border-color: var(--accent); background: rgba(77,163,255,0.10); color: var(--text); }
+  .dropzone .big { font-size: 17px; color: var(--text); margin-bottom: 6px; }
+  .dropzone .small { font-size: 12px; }
+  .or { text-align: center; color: var(--muted); font-size: 12px; margin: 18px 0; }
+  .folder-row { display: flex; gap: 10px; align-items: flex-start; }
+  .folder-row input[type=text] { margin-bottom: 8px; flex: 1; }
+  .checkline { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .checkline input { margin: 0; }
+  .progress-bg { background: var(--panel-2); border-radius: 6px; height: 10px; overflow: hidden; margin: 14px 0 8px; }
+  .progress-fill { background: var(--accent); height: 10px; width: 0%; transition: width .2s; }
+  .progress-fill.done { background: var(--win); }
+  .progress-text { font-size: 13px; color: var(--muted); }
+  .counters { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+  .counter { background: var(--panel-2); border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--muted); }
+  .counter b { display: block; font-size: 18px; color: var(--text); }
+  .counter.bad b { color: var(--loss); }
+  .logbox { font-family: Consolas, monospace; font-size: 12px; color: var(--muted); max-height: 150px; overflow: auto;
+            background: #0a0e18; border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
+  .logbox .failed { color: var(--loss); }
+  .logbox .added, .logbox .updated { color: var(--win); }
+  #job { display: none; margin-top: 22px; }
+  .note { font-size: 13px; color: var(--muted); }
+  code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
+</style>
 
-  <p style="color:var(--muted); font-size:13px;">
-    Point this at your replay folder and it'll scan every <code>.SC2Replay</code>
-    file there directly &mdash; no need to pick files by hand. We'll find you
-    using your saved name(s) (<code>{{ my_names | join(', ') }}</code>).
+<div class="card upload-wrap">
+  <h2>{{ 'Add to the pro pool' if is_pro else 'Add your replays' }}</h2>
+
+  {% if not is_pro and not my_names %}
+  <p class="note">
+    Set your in-game name(s) in <a class="link" href="{{ url_for('settings') }}">Settings</a> first so the app can find
+    you inside your replays.
   </p>
-  <form method="post" action="{{ url_for('scan_folder') }}">
-    <label>Replay folder path</label>
-    <input type="text" name="folder_path" value="{{ default_folder or '' }}"
-           placeholder="C:\Users\you\Documents\StarCraft II\Accounts\...\Replays\Multiplayer">
-    <input type="submit" value="Scan folder">
-  </form>
-
-  <hr style="border-color: var(--panel-border); margin: 24px 0;">
-
-  <p style="color:var(--muted); font-size:13px;">
-    Or upload individual files instead:
-  </p>
-  <form method="post" enctype="multipart/form-data">
-    <input type="file" name="replays" multiple accept=".SC2Replay">
-    <br><br>
-    <input type="submit" value="Upload and analyze">
-  </form>
   {% else %}
-  <p style="color:var(--muted); font-size:13px;">
-    Set your in-game name(s) in <a class="link" href="{{ url_for('settings') }}">Settings</a>
-    first so the app can find you inside your replays.
+  <p class="note">
+    {% if is_pro %}
+      Benchmark replays your own games get compared against. Both players of each game are analysed, so it doesn't
+      matter which side is "the pro". Good source:
+      <a class="link" href="https://lotv.spawningtool.com/replays/?pro_only=on" target="_blank" rel="noopener">lotv.spawningtool.com</a>
+      &mdash; recent ones, so they match the current patch.
+    {% else %}
+      Drop replays (or a whole folder) below. Each file becomes its own background job, so you can keep using the
+      dashboard while a worker chews through them. We find you by your saved name(s):
+      <code>{{ my_names | join(', ') }}</code>.
+    {% endif %}
   </p>
+
+  <div id="dropzone" class="dropzone" tabindex="0">
+    <div class="big">Drag &amp; drop <code>.SC2Replay</code> files or a folder here</div>
+    <div class="small">or click to choose files</div>
+    <input type="file" id="file-input" multiple accept=".SC2Replay" style="display:none">
+  </div>
+
+  <div class="or">&mdash; or scan a folder on this computer &mdash;</div>
+
+  <form id="scan-form">
+    <label>Folder path</label>
+    <div class="folder-row">
+      <input type="text" id="folder_path" value="{{ default_folder or '' }}"
+             placeholder="C:\Users\you\Documents\StarCraft II\Accounts\...\Replays\Multiplayer">
+      <button type="submit">Scan folder</button>
+    </div>
+    <label class="checkline"><input type="checkbox" id="force"> Re-analyse replays that are already imported</label>
+  </form>
+
+  <div id="error" class="error" style="display:none; margin-top:14px;"></div>
+
+  <div id="job">
+    <div class="progress-bg"><div class="progress-fill" id="bar"></div></div>
+    <div class="progress-text" id="status">Starting&hellip;</div>
+    <div class="counters" id="counters"></div>
+    <div class="logbox" id="log"></div>
+    <p id="finish" class="note" style="display:none; margin-top:14px;">
+      Done &mdash; <a class="link" href="{{ url_for('dashboard') }}">open the dashboard</a>.
+    </p>
+  </div>
   {% endif %}
 </div>
+
+<script src="{{ url_for('static', filename='js/batch.js') }}"></script>
+<script>
+const KIND = {{ kind | tojson }};
+const dz = document.getElementById('dropzone');
+if (dz) {
+  const input = document.getElementById('file-input');
+  const $ = (id) => document.getElementById(id);
+
+  function showError(msg) { $('error').textContent = msg; $('error').style.display = msg ? 'block' : 'none'; }
+
+  function startJob() {
+    showError('');
+    $('job').style.display = 'block';
+    $('finish').style.display = 'none';
+    $('bar').className = 'progress-fill';
+    $('bar').style.width = '0%';
+    $('log').innerHTML = '';
+    $('counters').innerHTML = '';
+    $('status').textContent = 'Starting…';
+  }
+
+  function onState(s) {
+    if (!s) return;
+    const listed = s.listed ? `${s.done} / ${s.total}` : 'listing folder…';
+    $('status').textContent = s.finished ? `Finished — ${s.total} replays processed` : `Analysing ${listed}`;
+    $('bar').style.width = (s.total ? Math.round(100 * s.done / s.total) : 0) + '%';
+    const c = (label, v, bad) => `<div class="counter ${bad && v ? 'bad' : ''}"><b>${v}</b>${label}</div>`;
+    $('counters').innerHTML = c('added', s.added) + c('updated', s.updated) + c('skipped', s.skipped) +
+      c('not a human 1v1 of yours', s.unmatched) + c('failed', s.failed, true);
+  }
+
+  function onFile(f) {
+    const log = $('log');
+    const line = document.createElement('div');
+    line.className = f.outcome;
+    line.textContent = `${f.outcome.padEnd(9)} ${f.file}${f.detail ? '  — ' + f.detail : ''}`;
+    log.appendChild(line);
+    while (log.children.length > 200) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function follow(batchId) {
+    Batch.follow(batchId, {
+      onState, onFile,
+      onDone: (s) => { onState(s); $('bar').classList.add('done'); $('finish').style.display = 'block'; },
+    });
+  }
+
+  async function handleFiles(files) {
+    if (!files.length) { showError('No .SC2Replay files in that selection.'); return; }
+    startJob();
+    $('status').textContent = `Uploading ${files.length} file${files.length === 1 ? '' : 's'}…`;
+    try {
+      const res = await Batch.uploadFiles(`/api/upload/${KIND}`, files, (p) => {
+        $('bar').style.width = Math.round(p * 100) + '%';
+      });
+      $('bar').style.width = '0%';
+      follow(res.batch_id);
+    } catch (e) { showError(e.message); $('job').style.display = 'none'; }
+  }
+
+  dz.addEventListener('click', () => input.click());
+  dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') input.click(); });
+  input.addEventListener('change', () => handleFiles(Array.from(input.files).filter((f) => f.name.toLowerCase().endsWith('.sc2replay'))));
+  ['dragenter', 'dragover'].forEach((t) => dz.addEventListener(t, (e) => { e.preventDefault(); dz.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((t) => dz.addEventListener(t, (e) => { e.preventDefault(); dz.classList.remove('over'); }));
+  dz.addEventListener('drop', async (e) => { handleFiles(await Batch.filesFromDrop(e.dataTransfer)); });
+
+  $('scan-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    startJob();
+    const body = new URLSearchParams({ folder_path: $('folder_path').value });
+    if ($('force').checked) body.set('force', '1');
+    const resp = await fetch(`/api/scan/${KIND}`, { method: 'POST', body });
+    const data = await resp.json();
+    if (!resp.ok) { showError(data.error || 'Something went wrong.'); $('job').style.display = 'none'; return; }
+    follow(data.batch_id);
+  });
+}
+</script>
 {% endblock %}

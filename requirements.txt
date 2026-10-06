@@ -1,2 +1,4 @@
-flask
-sc2reader
+flask>=3.1
+sc2reader>=1.9
+celery>=5.4
+redis>=5.0
