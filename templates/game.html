@@ -26,6 +26,13 @@
   .clock { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+  [hidden] { display: none !important; }
+  .chev { display: inline-block; width: 14px; margin-right: 8px; color: var(--muted); font-size: 12px; transition: transform .15s; }
+  .adv-toggle.open .chev { transform: rotate(90deg); }
+  .adv-toggle { width: 100%; text-align: left; background: var(--panel-2); color: var(--text); border: 1px solid var(--panel-border);
+                border-radius: 8px; padding: 11px 14px; margin-top: 20px; font-size: 14px; font-weight: 600; }
+  .adv-toggle:hover { border-color: var(--accent); opacity: 1; }
+  .adv-toggle .adv-hint { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 10px; }
   .chart-card { margin-top: 18px; }
   .chart-card h4 { margin: 0 0 8px; font-size: 13px; font-weight: 500; }
   .chart-box { height: 170px; position: relative; }
@@ -87,13 +94,16 @@ fetch(`/api/game/${SOURCE}/${GAME_ID}`).then((r) => { if (!r.ok) throw new Error
       </div>
     </div>
 
+    <button class="adv-toggle" id="adv-btn" type="button" aria-expanded="false"><span class="chev">&#9656;</span> More advanced stats<span class="adv-hint">resources &middot; APM &middot; supply &middot; fight list</span></button>
+    <div id="adv" hidden>
     <div class="card chart-card"><h4>Minerals &amp; gas &mdash; floating above ${tel.float_threshold} shows as a gap over the dashed line</h4><div class="chart-box"><canvas id="c-res"></canvas></div></div>
     <div class="card chart-card"><h4>Actions per minute (10-second windows) &mdash; shaded bands are fights</h4><div class="chart-box"><canvas id="c-apm"></canvas></div></div>
     <div class="card chart-card"><h4>Supply &amp; workers</h4><div class="chart-box"><canvas id="c-sup"></canvas></div></div>
 
     <div class="card chart-card"><h4>Fights (click to jump)</h4>
       <table class="fights"><tr><th>When</th><th>Army deaths: ${who}</th><th>Opponent</th></tr>
-      ${tel.fights.map((f, i) => `<tr class="fight-row" data-t="${f[0]}"><td>${fmt(f[0])}–${fmt(f[1])}</td><td>${f[2]}</td><td>${f[3]}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No fights detected.</td></tr>'}</table></div>`;
+      ${tel.fights.map((f, i) => `<tr class="fight-row" data-t="${f[0]}"><td>${fmt(f[0])}–${fmt(f[1])}</td><td>${f[2]}</td><td>${f[3]}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No fights detected.</td></tr>'}</table></div>
+    </div>`;
 
   // ---- map --------------------------------------------------------------------------------
   const canvas = document.getElementById('map');
@@ -165,15 +175,20 @@ fetch(`/api/game/${SOURCE}/${GAME_ID}`).then((r) => { if (!r.ok) throw new Error
   const mk = (id, datasets, yTitle) => new Chart(document.getElementById(id), { type: 'line', data: { datasets }, options: baseOpts(yTitle), plugins: [overlay] });
   const charts = [];
   const safe = (fn) => { try { charts.push(fn()); } catch (e) { console.error(e); } };
-  safe(() => mk('c-res', [
-    line('Minerals', xy(S.t, S.minerals), '#4da3ff'), line('Gas', xy(S.t, S.gas), '#3ecf8e'),
-    line(`${tel.float_threshold} threshold`, [{ x: 0, y: tel.float_threshold }, { x: tel.length, y: tel.float_threshold }], '#f5c451', { borderDash: [6, 5], borderWidth: 1.2 }),
-  ]));
-  safe(() => mk('c-apm', [line('APM', xy(S.apm_t, S.apm), '#c792ff', { stepped: true, fill: true, backgroundColor: 'rgba(199,146,255,0.15)' })]));
-  safe(() => mk('c-sup', [
-    line('Supply used', xy(S.t, S.supply), '#4da3ff'), line('Supply cap', xy(S.t, S.cap), '#93a0c2', { borderDash: [5, 4], borderWidth: 1.2 }),
-    line('Workers', xy(S.t, S.workers), '#f5c451'),
-  ]));
+  let chartsBuilt = false;
+  function buildCharts() {
+    if (chartsBuilt) return;
+    chartsBuilt = true;
+    safe(() => mk('c-res', [
+      line('Minerals', xy(S.t, S.minerals), '#4da3ff'), line('Gas', xy(S.t, S.gas), '#3ecf8e'),
+      line(`${tel.float_threshold} threshold`, [{ x: 0, y: tel.float_threshold }, { x: tel.length, y: tel.float_threshold }], '#f5c451', { borderDash: [6, 5], borderWidth: 1.2 }),
+    ]));
+    safe(() => mk('c-apm', [line('APM', xy(S.apm_t, S.apm), '#c792ff', { stepped: true, fill: true, backgroundColor: 'rgba(199,146,255,0.15)' })]));
+    safe(() => mk('c-sup', [
+      line('Supply used', xy(S.t, S.supply), '#4da3ff'), line('Supply cap', xy(S.t, S.cap), '#93a0c2', { borderDash: [5, 4], borderWidth: 1.2 }),
+      line('Workers', xy(S.t, S.workers), '#f5c451'),
+    ]));
+  }
 
   // ---- controls --------------------------------------------------------------------------------------
   function setK(k) { state.k = Math.min(K - 1, Math.max(0, k)); scrub.value = state.k; draw(); }
@@ -198,8 +213,18 @@ fetch(`/api/game/${SOURCE}/${GAME_ID}`).then((r) => { if (!r.ok) throw new Error
   document.getElementById('deaths').addEventListener('change', (e) => { state.deaths = e.target.checked; draw(); });
   document.querySelectorAll('.fight-row').forEach((row) => row.addEventListener('click', () => { stop(); setK(Math.round(+row.dataset.t / tel.snap)); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
 
+  const advBtn = document.getElementById('adv-btn'), adv = document.getElementById('adv');
+  const setAdv = (open, persist = true) => {
+    adv.hidden = !open; advBtn.classList.toggle('open', open); advBtn.setAttribute('aria-expanded', open);
+    if (open) { buildCharts(); draw(); }
+    if (persist) { try { localStorage.setItem('sc2.adv:game', open ? '1' : '0'); } catch (e) { /* not remembered */ } }
+  };
+  advBtn.addEventListener('click', () => setAdv(adv.hidden));
+  let wantAdv = false; try { wantAdv = localStorage.getItem('sc2.adv:game') === '1'; } catch (e) { /* default closed */ }
+
   // open on the first fight, since that's usually what you came to look at
   setK(tel.fights.length ? Math.round(tel.fights[0][0] / tel.snap) : 0);
+  if (wantAdv) setAdv(true, false);
 }).catch((e) => { document.getElementById('root').innerHTML = `<div class="err">Couldn't load that game (${e.message}).</div>`; });
 </script>
 {% endblock %}

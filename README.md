@@ -34,6 +34,19 @@ fed by a **Redis Stream**.
 | **Macro mechanics** | How much of the energy your bases generated in the first 10 minutes you actually spent: **Chrono Boost** (Protoss), **MULE / scan** (Terran), **inject** (Zerg). Each Nexus / Orbital earns a use on completion and another every 63.5 s (a queen: every 31.7 s); the same formula is applied to the pro pool, so compare against the pros rather than against 100%. |
 | **Army heatmaps** | Where each side's army stood, as smoothed density on a canvas, with a time scrubber. Aggregated per matchup (wins / losses / pro pool), per map, or per game. |
 
+### Basics first, details on demand
+
+Each matchup card shows the essentials up front: the "work on this" list, the
+build-order timing chart, what pros do that you don't, and the losses worth a
+second look. Everything deeper (execution under pressure, workers, macro
+mechanics, army heatmaps, the full pro build, win rate by map) sits behind
+**More advanced stats**. Only the matchup you most need to work on starts open;
+the rest show a one-line summary. Charts and heatmaps are built the first time
+a section is opened (which also keeps the page quick to load), and which cards
+and sections you opened are remembered in your browser. The per-game page works
+the same way: the army map and scrubber on top, the resource / APM / supply
+charts and fight list behind the toggle.
+
 ### "Work on this"
 
 Each matchup card opens with up to three habits worth fixing first
