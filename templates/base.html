@@ -2,12 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}SC2 Build Analyzer{% endblock %}</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/starcraft2_logo.png') }}">
 <style>
   :root {
     --bg: #0f1420;
     --panel: #171d2e;
+    --panel-2: #1d2438;
     --panel-border: #2a3350;
     --text: #e7ebf5;
     --muted: #93a0c2;
@@ -27,38 +29,17 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
     padding: 14px 32px;
     border-bottom: 1px solid var(--panel-border);
     background: var(--panel);
   }
-  nav .brand {
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 16px;
-  }
-  nav .brand img {
-    height: 30px;
-    width: auto;
-    object-fit: contain;
-    display: block;
-  }
-  nav a {
-    color: var(--muted);
-    text-decoration: none;
-    margin-left: 20px;
-    font-size: 14px;
-  }
-  nav a:hover { color: var(--text); }
-  .container { padding: 32px; max-width: 1000px; margin: 0 auto; }
-  .race-icon {
-    height: 1.2em;
-    width: 1.2em;
-    object-fit: contain;
-    vertical-align: -0.25em;
-    margin-right: 4px;
-  }
+  nav .brand { font-weight: 600; display: flex; align-items: center; gap: 10px; font-size: 16px; }
+  nav .brand img { height: 30px; width: auto; object-fit: contain; display: block; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 14px; }
+  nav a:hover, nav a.active { color: var(--text); }
+  .container { padding: 32px; max-width: 1040px; margin: 0 auto; }
   .card {
     background: var(--panel);
     border: 1px solid var(--panel-border);
@@ -86,9 +67,12 @@
     cursor: pointer;
   }
   button:hover, input[type=submit]:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: default; }
   .error { color: var(--loss); font-size: 13px; margin-bottom: 12px; }
   .message { color: var(--win); font-size: 13px; margin-bottom: 12px; }
   a.link { color: var(--accent); }
+  .race-icon { height: 1.2em; width: 1.2em; object-fit: contain; vertical-align: -0.25em; margin-right: 4px; }
+  .muted { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -100,8 +84,8 @@
   <div>
     <a href="{{ url_for('dashboard') }}">Dashboard</a>
     <a href="{{ url_for('games') }}">Game log</a>
-    <a href="{{ url_for('upload') }}">Upload my replays</a>
-    <a href="{{ url_for('upload_pro') }}">Upload pro pool</a>
+    <a href="{{ url_for('upload') }}">My replays</a>
+    <a href="{{ url_for('upload_pro') }}">Pro pool</a>
     <a href="{{ url_for('settings') }}">Settings</a>
   </div>
 </nav>
