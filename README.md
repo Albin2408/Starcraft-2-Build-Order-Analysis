@@ -30,7 +30,21 @@ fed by a **Redis Stream**.
 | **APM retention** | Actions per minute inside fights ÷ outside them. Actions are commands, selections and control-group use; camera moves and UI chatter are excluded. |
 | **Macro retention** | Same split, but only for production / economy commands (train, build, research, inject, chrono, MULE…) — *do you keep producing while you fight?* |
 | **Mineral floating** | Mean minerals above 400 after 4:00, plus the share of time above 800. Time spent at ≥190 supply is ignored: banking when maxed is unavoidable, and counting it makes long wins look like worse macro than short losses. |
+| **Workers** | Workers on the map at 4:00, 6:00 and 8:00, against the pro median for the same matchup. |
+| **Macro mechanics** | How much of the energy your bases generated in the first 10 minutes you actually spent: **Chrono Boost** (Protoss), **MULE / scan** (Terran), **inject** (Zerg). Each Nexus / Orbital earns a use on completion and another every 63.5 s (a queen: every 31.7 s); the same formula is applied to the pro pool, so compare against the pros rather than against 100%. |
 | **Army heatmaps** | Where each side's army stood, as smoothed density on a canvas, with a time scrubber. Aggregated per matchup (wins / losses / pro pool), per map, or per game. |
+
+### "Work on this"
+
+Each matchup card opens with up to three habits worth fixing first
+(`coaching.py`). Every candidate metric is scored two ways: how much worse it
+is in your losses than your wins, and how far you sit from the pro pool in
+units of the pros' own spread. The two are combined, a gap smaller than a
+practical minimum (e.g. 3 workers, 10 seconds, 100 minerals) counts as zero,
+and the score is shrunk when there are few games so thin data can't outrank
+solid data. Anything resting on fewer than 3 wins and 3 losses is tagged *low
+confidence* instead of hidden. It is a heuristic for deciding what to look at
+first, not a statistical test; the evidence line shows the numbers behind it.
 
 Games before a **patch cutoff** (a date or a version like `5.0.16`, set in
 Settings) are left out of the stats and marked in the game log, since an
@@ -124,8 +138,8 @@ python -m unittest discover -s tests -t .
 ```
 
 Unit tests cover the pure logic (fight clustering, interpolation, floating,
-grid normalisation, patch filter, build-guide aggregation, the schema
-migration). The Redis tests and the real-replay consistency test skip
+macro-mechanic and worker math, the "work on this" ranking, grid
+normalisation, patch filter, build-guide aggregation, the schema migration). The Redis tests and the real-replay consistency test skip
 themselves when Redis or replay files aren't available — point
 `SC2_TEST_REPLAYS` at a folder of replays to enable the latter. They run
 against a temporary database and Redis DB 15, never your data.
@@ -151,6 +165,10 @@ against a temporary database and Redis DB 15, never your data.
   tended to be", not an exact trace (~10 map units median error).
 - **Fights are a proxy**: clusters of army deaths with a killer. Merges (Archons)
   and morphs are excluded; small harassment under 3 deaths is not a fight.
+- **Macro-mechanic usage is an estimate.** It only counts the first 10 minutes
+  (clipped to the game's length), Terran counts scans as a legitimate use of
+  Orbital energy, and Zerg assumes one inject queen per hatchery once the pool
+  is done (a macro hatch without a queen will read as missed injects).
 - **APM is raw**, not "effective" APM — spam inflates it equally in both phases,
   so the *ratio* is the more trustworthy number.
 - **Orientation assumes point-symmetric 2-player maps.** "All maps" heatmaps

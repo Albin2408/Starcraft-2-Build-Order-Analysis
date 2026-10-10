@@ -19,6 +19,7 @@ from collections import defaultdict
 
 import sc2reader
 
+import coaching
 import telemetry
 
 SUPPLY_UNIT_BY_RACE = {
@@ -46,11 +47,17 @@ TELEMETRY_METRICS = [
     ("float_penalty", "Minerals floated above 400"),
     ("float_pct", "% of time floating 800+"),
     ("fight_count", "Fights"),
+    ("workers_4m", "Workers at 4:00"),
+    ("workers_6m", "Workers at 6:00"),
+    ("workers_8m", "Workers at 8:00"),
+    ("mech_efficiency", "Macro mechanic usage"),
 ]
 
 DEVIATION_THRESHOLD_SECONDS = 15
 FLOAT_DEVIATION = 300          # minerals
 RETENTION_DEVIATION = 0.15     # ratio points
+WORKER_DEVIATION = 6           # workers at 6:00
+MECH_DEVIATION = 0.2           # usage ratio points
 
 # Only these count as real ladder/melee races. Co-op commander missions and
 # Arcade maps can report custom race strings.
@@ -428,6 +435,19 @@ def _flag_notes(game, stats, tele_win_means, avg_block_win):
             "diff": round(fl - fl_win), "val": str(round(fl)), "win_med": str(round(fl_win)),
             "unit": " minerals",
         })
+    wk, wk_win = game.get("workers_6m"), tele_win_means.get("workers_6m")
+    if wk is not None and wk_win is not None and wk_win - wk >= WORKER_DEVIATION:
+        notes.append({
+            "label": "Workers at 6:00", "direction": "fewer",
+            "diff": round(wk_win - wk), "val": str(wk), "win_med": str(round(wk_win)), "unit": " workers",
+        })
+    mech, mech_win = game.get("mech_efficiency"), tele_win_means.get("mech_efficiency")
+    if mech is not None and mech_win is not None and mech_win - mech >= MECH_DEVIATION:
+        notes.append({
+            "label": "Macro mechanic usage", "direction": "lower",
+            "diff": round(100 * (mech_win - mech)), "val": f"{round(100 * mech)}%",
+            "win_med": f"{round(100 * mech_win)}%", "unit": " points",
+        })
     for key, label in (("apm_retention", "APM retention in fights"), ("macro_retention", "Macro retention in fights")):
         v, base = game.get(key), tele_win_means.get(key)
         if v is not None and base is not None and base - v >= RETENTION_DEVIATION:
@@ -498,6 +518,8 @@ def compute_matchup_data(records, pro_records=None):
             "game_count": len(games), "win_count": len(wins), "loss_count": len(losses),
             "has_pro": bool(pro_games), "pro_count": len(pro_games),
             "stats": stats, "telemetry": tele,
+            "mech_label": telemetry.MECH_LABEL.get(my_race, "Macro mechanic usage"),
+            "focus": coaching.rank_focus(wins, losses, pro_games, my_race),
             "flagged": flagged, "map_stats": map_stats,
             "maps": sorted(map_counts),
             "avg_supply_blocks_win": mean_or_none([g.get("supply_block_count") for g in wins]),

@@ -21,7 +21,8 @@ from config import DB_PATH
 #      clock; supply-depot type fix; telemetry (APM / floating / heatmaps).
 #   4: floating minerals ignores time spent maxed out; games vs the built-in
 #      AI are excluded.
-PARSER_VERSION = 4
+#   5: worker counts at 4/6/8 min and chrono / MULE / inject usage.
+PARSER_VERSION = 5
 
 # Columns shared by `games` (your replays) and `pro_games` (benchmark pool).
 STAT_COLUMNS = [
@@ -50,6 +51,13 @@ STAT_COLUMNS = [
     ("float_penalty", "REAL"),      # mean minerals above the float threshold
     ("float_pct", "REAL"),          # % of time spent heavily floating
     ("fight_count", "INTEGER"),
+    # --- economy & macro mechanics (first 10 minutes) ---
+    ("workers_4m", "INTEGER"),
+    ("workers_6m", "INTEGER"),
+    ("workers_8m", "INTEGER"),
+    ("mech_uses", "INTEGER"),       # chrono / MULE+scan / inject commands used
+    ("mech_possible", "INTEGER"),   # how many the energy allowed
+    ("mech_efficiency", "REAL"),    # uses / possible, capped at 1
     # --- bookkeeping ---
     ("file_hash", "TEXT"),
     ("source_path", "TEXT"),

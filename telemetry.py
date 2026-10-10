@@ -84,6 +84,69 @@ FLOAT_HEAVY = 800
 FLOAT_MAXED_SUPPLY = 190  # at/above this supply, floating is expected, not a penalty
 
 
+# --- macro mechanics ---------------------------------------------------------------------
+
+# Chrono Boost, MULE / scan and Spawn Larva (inject) are all paid for in energy,
+# which every Nexus / Orbital Command / Queen regenerates at a fixed rate, so
+# "how many could you have used" is computable and "how many did you use" is
+# just a count of those commands. Same formula for you and the pro pool.
+ENERGY_REGEN = 0.7875                      # energy per second on Faster
+MECH_WINDOW = 600                          # measure the first 10 minutes only: that's where
+                                           # macro habits show, and late-game banking is noise
+MECH_ABILITIES = {                         # ability names as they appear in replays
+    "Protoss": {"ChronoBoostEnergyCost"},
+    "Terran": {"CalldownMULE", "ScannerSweep"},   # both cost 50: scanning is a fair use of energy
+    "Zerg": {"SpawnLarva"},
+}
+MECH_ENERGY = {"Protoss": 50, "Terran": 50, "Zerg": 25}
+QUEEN_DELAY = 36                           # queen build time: first inject can't come before this
+MECH_LABEL = {"Protoss": "Chrono Boost used", "Terran": "Orbital energy used (MULE / scan)",
+              "Zerg": "Inject uptime"}
+WORKER_MARKS = (240, 360, 480)             # 4:00, 6:00, 8:00
+
+
+def worker_at(stat_samples, t, length):
+    """Workers on the map at game time t: the last PlayerStats sample at or
+    before t. None if the game ended before t. samples: (time, ..., workers at index 3)."""
+    if length < t:
+        return None
+    last = None
+    for s in stat_samples:
+        if s[0] > t:
+            break
+        last = s[3]
+    return last
+
+
+def mechanic_stats(race, bases, uses, pool_done=None, window=MECH_WINDOW):
+    """How much of the energy-based macro mechanic you actually used.
+
+    bases: [(ready_time, end_time_or_None)] - Nexuses / Orbital Commands /
+    Hatcheries. uses: times of the mechanic's commands. Each base earns one use
+    when it finishes (Nexus and Orbital start with 50 energy, a new queen with
+    25) and another every energy-cost / regen seconds after. For Zerg a base
+    only counts once the pool is done and a queen could be out, which is an
+    approximation (it assumes one inject queen per hatchery).
+    Returns {mech_uses, mech_possible, mech_efficiency} (efficiency capped at 1).
+    """
+    period = MECH_ENERGY[race] / ENERGY_REGEN
+    possible = 0
+    for ready, end in bases:
+        start = ready
+        if race == "Zerg":
+            if pool_done is None:
+                continue
+            start = max(ready, pool_done) + QUEEN_DELAY
+        stop = min(window, end if end is not None else window)
+        if start < stop:
+            possible += 1 + int((stop - start) // period)
+    used = sum(1 for t in uses if t <= window)
+    if possible == 0:
+        return {"mech_uses": used, "mech_possible": 0, "mech_efficiency": None}
+    return {"mech_uses": used, "mech_possible": possible,
+            "mech_efficiency": round(min(1.0, used / possible), 3)}
+
+
 # --- action classification ---------------------------------------------------------------
 
 # Game events that are real player actions. Camera moves, UI state and the
@@ -322,6 +385,16 @@ def analyze_replay(replay, pids):
     starts = {}
     xs, ys = [], []
     last_frame = 0
+    races = {p.pid: p.play_race for p in replay.players}
+    bases = {}                                   # Unit -> [pid, ready_t, end_t]  (energy-bearing bases)
+    pool_done = {}                               # pid -> time the Spawning Pool finished
+
+    def base_race(unit_name):
+        if unit_name == "Nexus":
+            return "Protoss"
+        if unit_name in ("Hatchery", "Lair", "Hive"):
+            return "Zerg"
+        return None
 
     for event in replay.tracker_events:
         frame = event.frame
@@ -338,8 +411,30 @@ def analyze_replay(replay, pids):
             ys.append(y)
             if frame == 0 and unit.name in TOWNHALL_NAMES and owner.pid not in starts:
                 starts[owner.pid] = (x, y)
+            # the starting Nexus / Hatchery exists from the first frame. (The
+            # starting Command Center only counts once it becomes an Orbital.)
+            if kind == "UnitBornEvent" and frame == 0 and base_race(unit.name) == races.get(owner.pid):
+                bases[unit] = [owner.pid, 0.0, None]
             if kind == "UnitBornEvent" and is_army_unit(unit):
                 tracks[unit] = [owner.pid, [(frame / fps, x, y)], None]
+
+        elif kind == "UnitDoneEvent":
+            unit = event.unit
+            owner = getattr(unit, "owner", None) if unit else None
+            if owner is None or owner.pid not in pidset:
+                continue
+            if base_race(unit.name) == races.get(owner.pid) and unit not in bases:
+                bases[unit] = [owner.pid, frame / fps, None]
+            elif unit.name == "SpawningPool" and owner.pid not in pool_done:
+                pool_done[owner.pid] = frame / fps
+
+        elif kind == "UnitTypeChangeEvent":
+            # a Command Center finishing its morph into an Orbital Command
+            unit = getattr(event, "unit", None)
+            owner = getattr(unit, "owner", None) if unit else None
+            if (owner is not None and owner.pid in pidset and races.get(owner.pid) == "Terran"
+                    and getattr(event, "unit_type_name", None) == "OrbitalCommand" and unit not in bases):
+                bases[unit] = [owner.pid, frame / fps, None]
 
         elif kind == "UnitPositionsEvent":
             t = frame / fps
@@ -349,6 +444,9 @@ def analyze_replay(replay, pids):
                     track[1].append((t, pos[0], pos[1]))
 
         elif kind == "UnitDiedEvent":
+            base = bases.get(event.unit)
+            if base is not None and base[2] is None:
+                base[2] = frame / fps
             track = tracks.get(event.unit)
             if track is None or track[2] is not None:
                 continue
@@ -372,8 +470,10 @@ def analyze_replay(replay, pids):
     length = last_frame / fps
     snapshots = build_snapshots(tracks.values(), pids, length)
 
-    # Action stream: (time, is_macro) per player.
+    # Action stream: (time, is_macro) per player, plus when each player used
+    # their race's energy mechanic.
     actions = {pid: [] for pid in pids}
+    mech_uses = {pid: [] for pid in pids}
     for event in replay.game_events:
         player = getattr(event, "player", None)
         if player is None or player.pid not in pidset:
@@ -381,6 +481,8 @@ def analyze_replay(replay, pids):
         kind = type(event).__name__
         if kind in _COMMAND_EVENTS:
             actions[player.pid].append((event.frame / fps, is_macro_command(event)))
+            if getattr(event, "ability_name", None) in MECH_ABILITIES.get(races.get(player.pid), ()):
+                mech_uses[player.pid].append(event.frame / fps)
         elif kind in _SELECTION_EVENTS:
             actions[player.pid].append((event.frame / fps, False))
 
@@ -390,6 +492,8 @@ def analyze_replay(replay, pids):
         "fps": fps, "length": length, "snapshots": snapshots, "deaths": deaths,
         "stats": stats, "actions": actions, "fights": fights, "starts": starts,
         "bounds": trimmed_bounds(xs, ys),
+        "races": races, "mech_uses": mech_uses, "pool_done": pool_done,
+        "bases": [(pid, ready, end) for pid, ready, end in bases.values()],
     }
 
 
@@ -407,7 +511,15 @@ def player_view(analysis, me_pid, opp_pid):
     rates = split_rates(analysis["actions"][me_pid], windows, length)
     floats = floating_stats([(s[0], s[1], s[4]) for s in analysis["stats"][me_pid]])
 
-    metrics = {**{k: v for k, v in rates.items() if k != "fight_seconds"}, **floats,
+    race = analysis["races"].get(me_pid)
+    mech = mechanic_stats(
+        race, [(ready, end) for pid, ready, end in analysis["bases"] if pid == me_pid],
+        analysis["mech_uses"][me_pid], analysis["pool_done"].get(me_pid),
+        window=min(MECH_WINDOW, length),          # a game that ended at 6:00 only had 6 minutes of energy
+    ) if race in MECH_ENERGY else {"mech_uses": None, "mech_possible": None, "mech_efficiency": None}
+    workers = {f"workers_{t // 60}m": worker_at(analysis["stats"][me_pid], t, length) for t in WORKER_MARKS}
+
+    metrics = {**{k: v for k, v in rates.items() if k != "fight_seconds"}, **floats, **mech, **workers,
                "fight_count": len(analysis["fights"])}
 
     # APM time series, one point per snapshot interval.
